@@ -1,0 +1,860 @@
+<title>Robopavouk simulátor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: celá plocha = 3D scéna, vpravo (na telefonu dole) ovládací panel jako přístrojová deska */
+:root {
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --fg: #1b1f24;
+  --muted: #5d6670;
+  --line: #d5dae0;
+  --accent: #d2361e;      /* červená z modelu */
+  --accent-fg: #ffffff;
+  --chip: #e6e9ed;
+  --ok: #1f8a4c;
+  --warn: #b7791f;
+  --bad: #c0392b;
+  --scene: #e4e7ea;
+  --grid: #c3c9d0;
+  --f-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171b; --panel: #1b1f24; --fg: #e7eaee; --muted: #9aa3ad; --line: #2c333b;
+    --accent: #ef5a3f; --accent-fg: #14171b; --chip: #252b32;
+    --ok: #46c27b; --warn: #e2a845; --bad: #f06b5b;
+    --scene: #1a1e23; --grid: #39414a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171b; --panel: #1b1f24; --fg: #e7eaee; --muted: #9aa3ad; --line: #2c333b;
+  --accent: #ef5a3f; --accent-fg: #14171b; --chip: #252b32;
+  --ok: #46c27b; --warn: #e2a845; --bad: #f06b5b;
+  --scene: #1a1e23; --grid: #39414a; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 14px; }
+.app { display: grid; grid-template-columns: minmax(0,1fr) 360px; height: 100%; }
+.stage { position: relative; min-width: 0; min-height: 0; background: var(--scene); }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.hud { position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); top: 12px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.pill { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-family: var(--f-mono); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.panel { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding-block: 16px 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: 26px; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 2px 0 0; line-height: 1.4; }
+.sec { display: flex; flex-direction: column; gap: 8px; }
+.lab { font-family: var(--f-display); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.seg.g3 { grid-template-columns: repeat(3, 1fr); }
+button { font: 600 14px var(--f-display); letter-spacing: 0.02em; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 9px 6px; cursor: pointer; min-width: 0; }
+button:hover { border-color: var(--muted); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pad button { font-size: 18px; padding: 8px 4px; }
+.pad .stop { font-size: 14px; }
+.row { display: grid; grid-template-columns: 120px minmax(0,1fr) 62px; align-items: center; gap: 10px; }
+.row label { color: var(--fg); }
+.row output { font-family: var(--f-mono); font-size: 12px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-family: var(--f-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+th { text-align: right; font: 600 11px var(--f-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 4px 4px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+td { text-align: right; padding: 4px; border-bottom: 1px solid var(--line); }
+td.w { color: var(--warn); font-weight: 600; }
+td.b { color: var(--bad); font-weight: 600; }
+td .sw { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--muted); vertical-align: 1px; }
+td .sw.on { background: var(--ok); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.stat b { display: block; font-family: var(--f-mono); font-size: 17px; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12px; }
+.stat.w b { color: var(--warn); } .stat.b b { color: var(--bad); } .stat.o b { color: var(--ok); }
+.note { color: var(--muted); font-size: 12.5px; line-height: 1.45; margin: 0; }
+kbd { font-family: var(--f-mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--chip); }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 52vh auto; height: auto; min-height: 100%; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+}
+</style>
+
+<div class="app">
+  <div class="stage">
+    <canvas id="view" aria-label="3D model robopavouka"></canvas>
+    <div class="hud">
+      <div class="pill"><span class="dot" id="stabDot"></span><span id="hudMode">Stojí</span></div>
+      <div class="pill" id="hudGait">Trojnožka</div>
+    </div>
+  </div>
+
+  <aside class="panel">
+    <div>
+      <h1>Robopavouk</h1>
+      <p class="sub">Simulace hexapodu z 3D modelu: 18× MG90S, stejné rozměry a stejný výpočet kloubů, jaký pojede ve firmwaru.</p>
+    </div>
+
+    <div class="sec">
+      <div class="lab">Režim</div>
+      <div class="seg" role="group" aria-label="Režim">
+        <button id="mStand" aria-pressed="true">Stát</button>
+        <button id="mWalk" aria-pressed="false">Chodit</button>
+        <button id="mWave" aria-pressed="false">Zamávat</button>
+        <button id="mDance" aria-pressed="false">Tanec</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="lab">Sekvence</div>
+      <div class="seg g3" role="group" aria-label="Sekvence">
+        <button id="qRest">Lehni</button>
+        <button data-seq="shake">Podej nohu</button>
+        <button data-seq="bow">Úklona</button>
+        <button data-seq="attack">Útok</button>
+        <button data-seq="sway">Kroužení</button>
+        <button data-seq="wiggle">Zavrť</button>
+        <button data-seq="pushups">Kliky</button>
+        <button data-seq="march">Pochod</button>
+        <button data-seq="startle">Leknutí</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="lab">Chůze</div>
+      <div class="seg g3" role="group" aria-label="Typ chůze">
+        <button id="gTripod" aria-pressed="true">Trojnožka</button>
+        <button id="gRipple" aria-pressed="false">Ripple</button>
+        <button id="gWave" aria-pressed="false">Vlnová</button>
+      </div>
+      <div class="pad" role="group" aria-label="Směr chůze">
+        <button id="dTL" title="Otáčet vlevo (Q)" aria-label="Otáčet vlevo">⟲</button>
+        <button id="dF" title="Dopředu (W)" aria-label="Dopředu">↑</button>
+        <button id="dTR" title="Otáčet vpravo (E)" aria-label="Otáčet vpravo">⟳</button>
+        <button id="dL" title="Bokem vlevo (A)" aria-label="Bokem vlevo">←</button>
+        <button id="dS" class="stop" title="Zastavit (mezerník)">Stop</button>
+        <button id="dR" title="Bokem vpravo (D)" aria-label="Bokem vpravo">→</button>
+        <span></span>
+        <button id="dB" title="Dozadu (S)" aria-label="Dozadu">↓</button>
+        <span></span>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="lab">Parametry</div>
+      <div class="row"><label for="sSpeed">Rychlost</label><input type="range" id="sSpeed" min="10" max="90" step="5" value="45"><output id="oSpeed"></output></div>
+      <div class="row"><label for="sFreq">Kroky za s</label><input type="range" id="sFreq" min="0.5" max="2.5" step="0.1" value="1.2"><output id="oFreq"></output></div>
+      <div class="row"><label for="sLift">Výška kroku</label><input type="range" id="sLift" min="8" max="35" step="1" value="16"><output id="oLift"></output></div>
+      <div class="row"><label for="sHeight">Výška těla</label><input type="range" id="sHeight" min="38" max="78" step="1" value="57"><output id="oHeight"></output></div>
+      <div class="row"><label for="sSpread">Rozkročení</label><input type="range" id="sSpread" min="58" max="88" step="1" value="69"><output id="oSpread"></output></div>
+    </div>
+
+    <div class="sec">
+      <div class="lab">Stav</div>
+      <div class="stats">
+        <div class="stat" id="stStab"><b id="vStab">–</b><span>rezerva stability</span></div>
+        <div class="stat" id="stSpd"><b id="vSpd">–</b><span>max rychlost serva</span></div>
+        <div class="stat"><b id="vFeet">6</b><span>noh na zemi</span></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="lab">Úhly serv (příkaz, střed = 90°)</div>
+      <table aria-label="Úhly serv">
+        <thead><tr><th>Noha</th><th>Coxa</th><th>Stehno</th><th>Koleno</th></tr></thead>
+        <tbody id="angles"></tbody>
+      </table>
+      <p class="note">Žlutě: servo je za ±60° od středu. Červeně: kloub narazí na mechanickou mez modelu (coxa ±60°, stehno od 60° dolů po 90° nahoru, koleno −40…+110°) nebo noha nedosáhne na cíl.</p>
+    </div>
+
+    <p class="note">Hvězdička u rychlosti nebo kroků znamená, že je simulace sama omezila: přenos nohy musí trvat aspoň 0,28 s, aby ho MG90S stihlo, a krok smí mít nejvýš 44 mm.</p>
+    <p class="note">Klávesy: <kbd>W</kbd><kbd>S</kbd> dopředu a dozadu, <kbd>A</kbd><kbd>D</kbd> bokem, <kbd>Q</kbd><kbd>E</kbd> otáčení, <kbd>mezerník</kbd> stop. Myší nebo prstem otáčíš kamerou, kolečkem přibližuješ.</p>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+"use strict";
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+// ---------- rozměry z robospider.scad ----------
+const RF = 43.5, YF = 16.5, ZF = 12, L1 = 46;
+const TIP = [70.52, -44.14];                 // špička bérce v rámci kolene (ven, nahoru)
+const LT = Math.hypot(TIP[0], TIP[1]), G0 = Math.atan2(TIP[1], TIP[0]);
+const DOFF = 22, FOOT_R = 3.5;
+const NEUTRAL = { coxa: 0, hip: -20, knee: 90 };   // póza při montáži (servo 90°)
+const LIM = { coxa: [-60, 60], hip: [-90, 60], knee: [-40, 110] };
+
+const LEGS = [
+  { id: "LP", name: "Levá přední",   cx:  65, cy:  45, h:   45, s:  1 },
+  { id: "LS", name: "Levá střední",  cx:   0, cy:  60, h:   90, s:  1 },
+  { id: "LZ", name: "Levá zadní",    cx: -65, cy:  45, h:  135, s:  1 },
+  { id: "PP", name: "Pravá přední",  cx:  65, cy: -45, h:  -45, s: -1 },
+  { id: "PS", name: "Pravá střední", cx:   0, cy: -60, h:  -90, s: -1 },
+  { id: "PZ", name: "Pravá zadní",   cx: -65, cy: -45, h: -135, s: -1 },
+];
+const GAITS = {
+  tripod: { name: "Trojnožka", duty: 1/2, off: { LP: 0, PS: 0, LZ: 0, LS: .5, PP: .5, PZ: .5 } },
+  ripple: { name: "Ripple",    duty: 2/3, off: { LZ: 0, LS: 1/3, LP: 2/3, PZ: .5, PS: 5/6, PP: 1/6 } },
+  wave:   { name: "Vlnová",    duty: 5/6, off: { LZ: 0, LS: 1/6, LP: 2/6, PZ: 3/6, PS: 4/6, PP: 5/6 } },
+};
+
+// ---------- inverzní kinematika (stejná jako bude ve firmwaru) ----------
+function ik(leg, p) {
+  let ok = true;
+  let rho = Math.hypot(p[0], p[1]);
+  const d = leg.s * DOFF;
+  if (rho < Math.abs(d) + 1) { rho = Math.abs(d) + 1; ok = false; }
+  const coxa = Math.atan2(p[1], p[0]) - Math.asin(d / rho);
+  const u = Math.sqrt(rho * rho - d * d);
+  const dx = u - RF, dz = p[2] - ZF;
+  let D = Math.hypot(dx, dz);
+  const dmin = Math.abs(L1 - LT) + 0.5, dmax = L1 + LT - 0.5;
+  if (D < dmin) { D = dmin; ok = false; }
+  if (D > dmax) { D = dmax; ok = false; }
+  const c = (D * D - L1 * L1 - LT * LT) / (2 * L1 * LT);
+  const psi = -Math.acos(Math.max(-1, Math.min(1, c)));
+  const e = Math.atan2(dz, dx) - Math.atan2(LT * Math.sin(psi), L1 + LT * Math.cos(psi));
+  const knee = G0 - psi;
+  return { coxa: coxa * R2D, hip: -e * R2D, knee: knee * R2D, ok };
+}
+// přímá kinematika: úhly -> špička v rámci nohy
+function fk(leg, a) {
+  const c = a.coxa * D2R, e = -a.hip * D2R, k = a.knee * D2R;
+  const t = e - k + G0;
+  const u = RF + L1 * Math.cos(e) + LT * Math.cos(t);
+  const z = ZF + L1 * Math.sin(e) + LT * Math.sin(t);
+  const d = leg.s * DOFF;
+  return [u * Math.cos(c) - d * Math.sin(c), u * Math.sin(c) + d * Math.cos(c), z];
+}
+
+// ---------- scéna ----------
+const canvas = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 5, 5000);
+camera.up.set(0, 0, 1);
+camera.position.set(330, -360, 260);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.target.set(0, 0, 40);
+controls.enableDamping = true;
+controls.minDistance = 150; controls.maxDistance = 1400;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f96, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.75);
+sun.position.set(220, -160, 420);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -320, right: 320, top: 320, bottom: -320, near: 50, far: 1200 });
+scene.add(sun); scene.add(sun.target);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.ShadowMaterial({ opacity: 0.22 }));
+ground.receiveShadow = true;
+scene.add(ground);
+let grid = null;
+function buildGrid(color) {
+  if (grid) scene.remove(grid);
+  grid = new THREE.GridHelper(4000, 80, color, color);
+  grid.rotation.x = Math.PI / 2;
+  grid.position.z = 0.2;
+  scene.add(grid);
+}
+
+const M = {
+  body:  new THREE.MeshStandardMaterial({ color: 0x232427, roughness: 0.45, metalness: 0.05 }),
+  dark:  new THREE.MeshStandardMaterial({ color: 0x2a2b2e, roughness: 0.6 }),
+  red:   new THREE.MeshStandardMaterial({ color: 0xd1261a, roughness: 0.4 }),
+  servo: new THREE.MeshStandardMaterial({ color: 0x2457c9, roughness: 0.5 }),
+  horn:  new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.5 }),
+  pcb:   new THREE.MeshStandardMaterial({ color: 0x1b8a43, roughness: 0.6 }),
+  bat:   new THREE.MeshStandardMaterial({ color: 0x5b6068, roughness: 0.6 }),
+  tip:   new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }),
+  cable: new THREE.MeshStandardMaterial({ color: 0xe08a1e, roughness: 0.7 }),
+  hole:  new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 1 }),
+};
+function shade(m) { m.castShadow = true; m.receiveShadow = true; return m; }
+// zaoblený kvádr (svislé hrany zaoblené tvarem, horní a dolní hrany zkosením s oblouky)
+const _rbCache = new Map();
+function roundRect(w, h, r) {
+  const sh = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  sh.moveTo(x + r, y); sh.lineTo(x + w - r, y); sh.quadraticCurveTo(x + w, y, x + w, y + r);
+  sh.lineTo(x + w, y + h - r); sh.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  sh.lineTo(x + r, y + h); sh.quadraticCurveTo(x, y + h, x, y + h - r);
+  sh.lineTo(x, y + r); sh.quadraticCurveTo(x, y, x + r, y);
+  return sh;
+}
+function roundedBox(w, h, d, r) {
+  const key = [w, h, d, r].map(v => v.toFixed(2)).join(',');
+  if (_rbCache.has(key)) return _rbCache.get(key);
+  r = Math.min(r, w / 2 - 0.05, h / 2 - 0.05, d / 2 - 0.05);
+  let geo;
+  if (r < 0.3) geo = new THREE.BoxGeometry(w, h, d);
+  else {
+    const b = r * 0.6;
+    geo = new THREE.ExtrudeGeometry(roundRect(w - 2 * b, h - 2 * b, Math.max(r - b, 0.01)), {
+      depth: d - 2 * b, bevelEnabled: true, bevelSize: b, bevelThickness: b, bevelSegments: 3, curveSegments: 4 });
+    geo.translate(0, 0, -(d - 2 * b) / 2);
+    geo.computeVertexNormals();
+  }
+  _rbCache.set(key, geo); return geo;
+}
+function box(g, x0, x1, y0, y1, z0, z1, mat, r = 1.6) {
+  const m = shade(new THREE.Mesh(roundedBox(x1 - x0, y1 - y0, z1 - z0, r), mat));
+  m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  g.add(m); return m;
+}
+function cylY(g, x, z, r, y0, y1, mat) {      // válec s osou Y
+  const m = shade(new THREE.Mesh(new THREE.CylinderGeometry(r, r, y1 - y0, 28), mat));
+  m.position.set(x, (y0 + y1) / 2, z); g.add(m); return m;
+}
+function cylZ(g, x, y, r, z0, z1, mat) {
+  const m = shade(new THREE.Mesh(new THREE.CylinderGeometry(r, r, z1 - z0, 28), mat));
+  m.rotation.x = Math.PI / 2; m.position.set(x, y, (z0 + z1) / 2); g.add(m); return m;
+}
+// zrcadlení tangenciální osy pro pravé nohy
+const Y = (s, a, b) => s > 0 ? [a, b] : [-b, -a];
+
+// trup
+const bodyG = new THREE.Group();
+const world = new THREE.Group(); world.add(bodyG); scene.add(world);
+(function buildBody() {
+  const hub = [];
+  const lines = [];
+  const R = (L) => L.cx * Math.cos(L.h * D2R) + L.cy * Math.sin(L.h * D2R) - 23.9 + 0.5;
+  LEGS.forEach(L => lines.push({ a: L.h * D2R, r: R(L) }));
+  lines.push({ a: 0, r: 68 }, { a: Math.PI, r: 68 });
+  // průnik polorovin -> mnohoúhelník (obcházíme úhly po kruhu)
+  lines.sort((p, q) => ((p.a + 2 * Math.PI) % (2 * Math.PI)) - ((q.a + 2 * Math.PI) % (2 * Math.PI)));
+  for (let i = 0; i < lines.length; i++) {
+    const p = lines[i], q = lines[(i + 1) % lines.length];
+    const det = Math.cos(p.a) * Math.sin(q.a) - Math.sin(p.a) * Math.cos(q.a);
+    hub.push(new THREE.Vector2((p.r * Math.sin(q.a) - q.r * Math.sin(p.a)) / det, (q.r * Math.cos(p.a) - p.r * Math.cos(q.a)) / det));
+  }
+  // zaoblené rohy mnohoúhelníku trupu
+  const shape = new THREE.Shape(), RC = 7, n = hub.length;
+  for (let i = 0; i < n; i++) {
+    const p = hub[i], a = hub[(i + n - 1) % n], c = hub[(i + 1) % n];
+    const u = a.clone().sub(p).normalize(), v = c.clone().sub(p).normalize();
+    const p1 = p.clone().addScaledVector(u, RC), p2 = p.clone().addScaledVector(v, RC);
+    if (i === 0) shape.moveTo(p1.x, p1.y); else shape.lineTo(p1.x, p1.y);
+    shape.quadraticCurveTo(p.x, p.y, p2.x, p2.y);
+  }
+  shape.closePath();
+  const tray = shade(new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 36 - 5, bevelEnabled: true, bevelSize: 2.5, bevelThickness: 2.5, bevelSegments: 4, curveSegments: 8 }), M.body));
+  tray.position.z = 4.1 + 2.5; bodyG.add(tray);
+  const lid = shade(new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: true, bevelSize: 1, bevelThickness: 1, bevelSegments: 3, curveSegments: 8 }), M.body));
+  lid.position.z = 40.6 + 1; bodyG.add(lid);
+  box(bodyG, -42.5, 42.5, -28, 28, 48.6, 50.2, M.pcb);                 // Raspberry Pi / deska
+  box(bodyG, 21.5, 42.5, -26, 27, 50.2, 64, M.horn);
+  box(bodyG, -38.5, 38.5, -20.5, 20.5, -16.9, 4.1, M.bat);             // držák 2x 18650 pod trupem
+  // držák ultrazvukového senzoru na víku + senzor
+  box(bodyG, 68.5, 71, -25.8, -12, 43.1, 77.1, M.red, 0.8); box(bodyG, 68.5, 71, 12, 25.8, 43.1, 77.1, M.red, 0.8);
+  box(bodyG, 68.5, 71, -25.8, 25.8, 52.5, 77.1, M.red, 0.8);
+  for (const sy of [-1, 1]) {
+    box(bodyG, 43, 70, ...(sy > 0 ? [14, 25.8] : [-25.8, -14]), 43.1, 46.1, M.red, 0.8);
+    const eye = shade(new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 12, 28), M.horn));
+    eye.rotation.z = Math.PI / 2; eye.position.set(75, sy * 13, 64.3); bodyG.add(eye);
+    const cone = shade(new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 0.6, 28), M.tip));
+    cone.rotation.z = Math.PI / 2; cone.position.set(81.1, sy * 13, 64.3); bodyG.add(cone);
+  }
+  // kolébka baterie: rámeček s otevřeným dnem a oušky pro šrouby M3
+  for (const sy of [-1, 1]) {
+    box(bodyG, -41.1, 41.1, ...(sy > 0 ? [21.1, 23.1] : [-23.1, -21.1]), -19.2, -5, M.body, 0.8);
+    box(bodyG, -41.1, 41.1, ...(sy > 0 ? [21.1, 23.1] : [-23.1, -21.1]), 0.5, 4.1, M.body, 0.8);
+    for (const x of [-37, -12, 12, 37]) box(bodyG, x - 4, x + 4, ...(sy > 0 ? [21.1, 23.1] : [-23.1, -21.1]), -19.2, 4.1, M.body, 0.8);
+    box(bodyG, -41.1, 41.1, ...(sy > 0 ? [18.1, 23.1] : [-23.1, -18.1]), -19.2, -17.2, M.body, 0.8);
+  }
+  for (const sx of [-1, 1]) {
+    box(bodyG, ...(sx > 0 ? [39.1, 41.1] : [-41.1, -39.1]), -23.1, 23.1, -19.2, 4.1, M.body, 0.8);
+    box(bodyG, ...(sx > 0 ? [36.1, 41.1] : [-41.1, -36.1]), -23.1, 23.1, -19.2, -17.2, M.body, 0.8);
+    for (const sy of [-1, 1]) {
+      box(bodyG, ...(sx > 0 ? [40, 48] : [-48, -40]), sy * 8 - 4.5, sy * 8 + 4.5, 1.1, 4.1, M.body, 0.8);
+      cylZ(bodyG, sx * 48, sy * 8, 4.5, 1.1, 4.1, M.body);
+      cylZ(bodyG, sx * 48, sy * 8, 2.6, 0.2, 1.1, M.horn);             // hlava šroubu
+    }
+  }
+  LEGS.forEach(L => {
+    const g = new THREE.Group();
+    g.position.set(L.cx, L.cy, 0); g.rotation.z = L.h * D2R; bodyG.add(g);
+    box(g, -23.9, 12.9, -10, 10, 4.1, 26.5, M.body);                     // držák coxa serva
+    box(g, -16.9, 5.9, -6.1, 6.1, 0, 22.5, M.servo);                     // coxa servo
+    cylZ(g, 0, 0, 5.9, -4, 0, M.servo);
+    // okno pro kabel coxa serva ve stěně trupu vedle držáku + kabel k němu
+    const side = (L.cx > 1 ? -1 : 1) * L.s;
+    const yw = side > 0 ? [10.5, 16.5] : [-16.5, -10.5];
+    box(g, -21.6, -20.6, ...yw, 7.1, 17.1, M.hole, 0.3);
+    box(g, 12.4, 13.1, -2.6, 2.6, 12, 22.9, M.hole, 0.3);                // okno pro kabel pod můstkem
+    box(g, -20.9, 9, ...(side > 0 ? [10, 11.2] : [-11.2, -10]), 11, 14.6, M.cable, 0.4);
+  });
+})();
+
+// nohy
+function buildLeg(L) {
+  const s = L.s;
+  const base = new THREE.Group(); base.position.set(L.cx, L.cy, 0); base.rotation.z = L.h * D2R; bodyG.add(base);
+  const coxa = new THREE.Group(); base.add(coxa);
+  // vidlice coxa (desky dole a nahoře, stěna venku)
+  for (const [z0, z1] of [[-10.5, -6], [30.5, 34.5]]) {
+    box(coxa, 0, 20, -10, 10, z0, z1, M.red); cylZ(coxa, 0, 0, 10, z0, z1, M.red);
+  }
+  cylZ(coxa, 0, 0, 3.5, -6, -4.4, M.horn);
+  box(coxa, 17, 20, -10, 10, -10.5, 34.5, M.red);
+  box(coxa, 19.6, 56.4, ...Y(s, -10, 12.4), 2, 22, M.red);              // držák stehenního serva
+  box(coxa, 26.6, 49.4, ...Y(s, -6, 16.5), 5.9, 18.1, M.servo);
+  box(coxa, 55.9, 56.6, ...Y(s, -6.4, 4.5), 9.4, 14.6, M.hole, 0.3);    // okno pro kabel pod můstkem
+  // očko na kabely + kabely stehenního a kolenního serva po horní ploše coxy
+  box(coxa, 22, 27, ...Y(s, -10, 12.4), 26.2, 28.2, M.red, 0.6);
+  box(coxa, 22, 27, ...Y(s, -10, -8), 21, 28.2, M.red, 0.6);
+  box(coxa, 22, 27, ...Y(s, 10.4, 12.4), 21, 28.2, M.red, 0.6);
+  box(coxa, 20.5, 52, ...Y(s, -6.5, -2.9), 22, 23.2, M.cable, 0.4);
+  box(coxa, 20.5, 40, ...Y(s, 1.5, 5.1), 22, 23.2, M.cable, 0.4);
+  // stehno
+  const fem = new THREE.Group(); fem.position.set(RF, s * YF, ZF); coxa.add(fem);
+  for (const [y0, y1] of [[6, 10.5], [-34.5, -30.5]]) {
+    box(fem, 0, 20, ...Y(s, y0, y1), -10, 10, M.body); cylY(fem, 0, 0, 10, ...Y(s, y0, y1), M.body);
+  }
+  box(fem, 17, 22.1, ...Y(s, -34.5, 10.5), -10, 10, M.body);
+  box(fem, 22.1, 58.9, ...Y(s, -26.5, -4.1), -10, 10, M.body);
+  box(fem, 29.1, 51.9, ...Y(s, -22.5, 0), -6.1, 6.1, M.servo);
+  cylY(fem, 0, 0, 3.5, ...Y(s, 4.4, 6), M.horn);
+  box(fem, 58.4, 59.1, ...Y(s, -22.9, -12), -2.6, 2.6, M.hole, 0.3);    // okno pro kabel pod můstkem
+  // úchyty kabelu kolenního serva na horní ploše stehna + kabel
+  for (const xc of [22, 36]) {
+    box(fem, xc - 2.5, xc + 2.5, ...Y(s, -19.1, -17.6), 9.5, 12.8, M.body, 0.4);
+    box(fem, xc - 2.5, xc + 2.5, ...Y(s, -13, -11.5), 9.5, 12.8, M.body, 0.4);
+    box(fem, xc - 2.5, xc + 2.5, ...Y(s, -19.1, -16.1), 12.6, 14.2, M.body, 0.5);
+    box(fem, xc - 2.5, xc + 2.5, ...Y(s, -14.5, -11.5), 12.6, 14.2, M.body, 0.5);
+  }
+  box(fem, 14, 59.5, ...Y(s, -17.1, -13.5), 10, 11.2, M.cable, 0.4);
+  // bérec
+  const tib = new THREE.Group(); tib.position.set(L1, 0, 0); fem.add(tib);
+  box(tib, 0, 22, ...Y(s, 6, 10.5), -10, 10, M.red); cylY(tib, 0, 0, 10, ...Y(s, 6, 10.5), M.red);
+  box(tib, 0, 22, ...Y(s, -34.5, -30.5), -10, 10, M.red); cylY(tib, 0, 0, 10, ...Y(s, -34.5, -30.5), M.red);
+  box(tib, 17, 22, ...Y(s, -30.5, 10.5), -10, 10, M.red);
+  const pts = [];
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10, a = 75 * t * D2R;
+    pts.push({ x: 28 + 40 * Math.sin(a), z: -40 * (1 - Math.cos(a)), r: 7 - 3 * t, y: 10.5 - (18 - 8 * t) / 2 });
+  }
+  pts.push({ x: TIP[0], z: TIP[1], r: 3.5, y: 5.5 });
+  box(tib, 17, 30, ...Y(s, -6, 10.5), -8, 8, M.red);
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const sp = shade(new THREE.Mesh(new THREE.SphereGeometry(p.r, 20, 14), i === pts.length - 1 ? M.tip : M.red));
+    sp.position.set(p.x, s * p.y, p.z); tib.add(sp);
+    if (i > 0) {
+      const q = pts[i - 1];
+      const a = new THREE.Vector3(q.x, s * q.y, q.z), b = new THREE.Vector3(p.x, s * p.y, p.z);
+      const len = a.distanceTo(b);
+      const cy = shade(new THREE.Mesh(new THREE.CylinderGeometry(p.r, q.r, len, 20), M.red));
+      cy.position.copy(a).add(b).multiplyScalar(0.5);
+      cy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      tib.add(cy);
+    }
+  }
+  return { coxa, fem, tib };
+}
+const legObjs = LEGS.map(buildLeg);
+
+// opěrný mnohoúhelník + těžiště
+const polyMat = new THREE.LineBasicMaterial({ color: 0x1f8a4c });
+const polyLine = new THREE.LineLoop(new THREE.BufferGeometry(), polyMat);
+polyLine.position.z = 0.6; scene.add(polyLine);
+const comDot = new THREE.Mesh(new THREE.CircleGeometry(4, 24), new THREE.MeshBasicMaterial({ color: 0x1f8a4c }));
+comDot.position.z = 0.7; scene.add(comDot);
+
+// ---------- stav ----------
+const ui = {
+  speed: 45, freq: 1.2, lift: 16, height: 57, spread: 69,
+};
+const st = {
+  mode: "stand", gait: "tripod",
+  cmd: { vx: 0, vy: 0, w: 0 },          // požadovaný směr (jednotkový)
+  v: { vx: 0, vy: 0, w: 0 },            // skutečná rychlost (rampa)
+  phase: 0, liftScale: 0,
+  pos: new THREE.Vector3(0, 0, 0), heading: 0,
+  t: 0, waveT: -1, danceT: 0, danceAmp: 0,
+  prev: null, spdPeak: 0, spdHold: 0,
+  seq: null, seqT: 0, h: 57, ext: [0, 0, 0, 0, 0, 0], rest: false, idleT: 0,
+};
+// stejné konstanty a sekvence jako ve firmwaru (motion.h)
+const H_REST = 20, EXT_REST = 24, ORDER = [0, 2, 4, 1, 3, 5];
+const SEQ = {
+  standup: { name: "Vstává", dur: 1.8 + 6 * 0.4 + 0.2 }, sitdown: { name: "Lehá si", dur: 6 * 0.4 + 1.8 + 0.2 },
+  shake: { name: "Podává nohu", dur: 7.0 }, bow: { name: "Úklona", dur: 3.4 }, attack: { name: "Útočný postoj", dur: 8.4 },
+  sway: { name: "Krouží tělem", dur: 6.0 }, wiggle: { name: "Vrtí se", dur: 2.2 }, pushups: { name: "Kliky", dur: 5.4 },
+  march: { name: "Pochod na místě", dur: 4.5 }, startle: { name: "Leknutí", dur: 1.4 },
+};
+function neutral(L) { const i = LEGS.indexOf(L); return [ui.spread + st.ext[i], L.s * DOFF, -(st.h - FOOT_R)]; }
+function legToBody(L, p) {
+  const c = Math.cos(L.h * D2R), s = Math.sin(L.h * D2R);
+  return [L.cx + p[0] * c - p[1] * s, L.cy + p[0] * s + p[1] * c, p[2]];
+}
+function bodyToLeg(L, p) {
+  const c = Math.cos(L.h * D2R), s = Math.sin(L.h * D2R), x = p[0] - L.cx, y = p[1] - L.cy;
+  return [x * c + y * s, -x * s + y * c, p[2]];
+}
+const smooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+const approach = (a, b, r) => a + Math.max(-r, Math.min(r, b - a));
+
+// ---------- krok simulace ----------
+function update(dt) {
+  st.t += dt;
+  const g = GAITS[st.gait];
+  const walking = st.mode === "walk";
+  // přenos nohy musí trvat aspoň 0,28 s (MG90S ~600 °/s) a krok max 44 mm
+  const freq = Math.min(ui.freq, (1 - g.duty) / 0.28);
+  st.freqEff = freq;
+  const vmax = Math.min(ui.speed, 44 * freq / g.duty), wmax = vmax * 0.55;   // °/s pro otáčení
+  st.vmaxEff = vmax;
+  const tgt = walking ? { vx: st.cmd.vx * vmax, vy: st.cmd.vy * vmax, w: st.cmd.w * wmax } : { vx: 0, vy: 0, w: 0 };
+  const acc = 90 * dt;
+  st.v.vx = approach(st.v.vx, tgt.vx, acc);
+  st.v.vy = approach(st.v.vy, tgt.vy, acc);
+  st.v.w = approach(st.v.w, tgt.w, acc * 1.2);
+  const moving = Math.abs(st.v.vx) + Math.abs(st.v.vy) + Math.abs(st.v.w) > 0.5;
+  st.liftScale = approach(st.liftScale, moving || (walking && (tgt.vx || tgt.vy || tgt.w)) ? 1 : 0, dt * 3);
+  if (st.liftScale > 0 || moving) st.phase = (st.phase + dt * freq) % 1;
+
+  // pohyb těla ve světě
+  const ch = Math.cos(st.heading), sh = Math.sin(st.heading);
+  st.pos.x += (st.v.vx * ch - st.v.vy * sh) * dt;
+  st.pos.y += (st.v.vx * sh + st.v.vy * ch) * dt;
+  st.heading += st.v.w * D2R * dt;
+
+  // póza těla (posun / naklopení)
+  let shift = [0, 0, 0], rot = [0, 0, 0];
+  st.danceAmp = approach(st.danceAmp, st.mode === "dance" ? 1 : 0, dt * 1.5);
+  if (st.danceAmp > 0) {
+    st.danceT += dt;
+    const a = st.danceAmp, w = st.danceT * 2 * Math.PI * 0.45;
+    rot = [4 * a * Math.sin(w), 4 * a * Math.sin(w * 2 + 1), 6 * a * Math.sin(w * 0.5)];
+    shift = [7 * a * Math.sin(w * 0.5 + 0.7), 7 * a * Math.cos(w), 3 * a * Math.sin(w * 1.5)];
+  }
+  // zamávání
+  let waveBlend = 0, waveAng = null;
+  if (st.waveT >= 0) {
+    st.waveT += dt;
+    const t = st.waveT;
+    const sh1 = smooth(t / 0.9) * (1 - smooth((t - 6.6) / 0.9));
+    shift = [shift[0] - 14 * sh1, shift[1] - 16 * sh1, shift[2] + 4 * sh1];
+    rot = [rot[0] + 3 * sh1, rot[1] - 4 * sh1, rot[2]];
+    waveBlend = smooth((t - 0.9) / 0.8) * (1 - smooth((t - 5.8) / 0.8));
+    const wt = Math.max(0, t - 1.7);
+    const amp = smooth(wt / 0.6) * (1 - smooth((t - 5.2) / 0.6));
+    waveAng = { coxa: 12 + 26 * amp * Math.sin(wt * 2 * Math.PI * 1.1), hip: -72, knee: 28 + 16 * amp * Math.sin(wt * 2 * Math.PI * 1.1 + 1.6) };
+    if (t > 7.6) { st.waveT = -1; setMode("stand"); }
+  }
+
+  // sekvence z firmwaru
+  const legOff = LEGS.map(() => [0, 0]), legLift = [0, 0, 0, 0, 0, 0], ovr = [null, null, null, null, null, null], blend = [0, 0, 0, 0, 0, 0];
+  let march = 0;
+  if (waveAng) { ovr[0] = waveAng; blend[0] = waveBlend; }
+  if (st.seq) {
+    st.seqT += dt;
+    const t = st.seqT, W = 2 * Math.PI;
+    const env = (tIn, tOut, tLen) => smooth(t / tIn) * (1 - smooth((t - tOut) / tLen));
+    const stepU = (t0, dur) => Math.max(0, Math.min(1, (t - t0) / dur));
+    const stepLift = (u, h) => (u > 0 && u < 1) ? Math.sin(Math.PI * u) * h : 0;
+    const s0 = shift, r0 = rot; shift = [0, 0, 0]; rot = [0, 0, 0];     // doznívající tanec se přičte
+    switch (st.seq) {
+      case "standup":
+        st.h = H_REST + (ui.height - H_REST) * smooth(t / 1.8);
+        for (let i = 0; i < 6; i++) { const u = stepU(1.8 + ORDER[i] * 0.4, 0.4); st.ext[i] = EXT_REST * (1 - smooth(u)); legLift[i] = stepLift(u, 14); }
+        break;
+      case "sitdown":
+        for (let i = 0; i < 6; i++) { const u = stepU(ORDER[i] * 0.4, 0.4); st.ext[i] = EXT_REST * smooth(u); legLift[i] = stepLift(u, 14); }
+        st.h = ui.height + (H_REST - ui.height) * smooth((t - 2.4) / 1.8);
+        break;
+      case "shake": {
+        const s1 = env(0.9, 6.0, 0.9);
+        shift = [shift[0] - 14 * s1, shift[1] - 16 * s1, shift[2] + 4 * s1]; rot = [rot[0] + 3 * s1, rot[1] - 4 * s1, rot[2]];
+        blend[0] = smooth((t - 0.9) / 0.8) * (1 - smooth((t - 5.2) / 0.8));
+        const wt = Math.max(0, t - 2.4), amp = smooth(wt / 0.4) * (1 - smooth((t - 4.6) / 0.4));
+        ovr[0] = { coxa: -32, hip: -38 + 7 * amp * Math.sin(wt * W * 1.6), knee: 34 };
+      } break;
+      case "bow": { const e = env(0.9, 2.5, 0.9); rot = [0, 8 * e, 0]; shift = [6 * e, 0, -1 * e]; } break;
+      case "sway": {
+        const a = env(1.0, 5.0, 1.0), w = t * W * 0.5;
+        shift = [11 * a * Math.cos(w), 11 * a * Math.sin(w), 0]; rot = [-4 * a * Math.sin(w), 4 * a * Math.cos(w), 0];
+      } break;
+      case "wiggle": { const a = env(0.3, 1.8, 0.4), w = t * W * 3; rot = [0, 0, 8 * a * Math.sin(w)]; shift = [0, 4 * a * Math.sin(w + 1.2), 0]; } break;
+      case "pushups": { const a = t < 4.8 ? 0.5 - 0.5 * Math.cos(t * W / 1.6) : 0; shift = [0, 0, -14 * a]; } break;
+      case "march": march = env(0.5, 3.8, 0.6); break;
+      case "startle": { const e = smooth(t / 0.18) * (1 - smooth((t - 0.9) / 0.5)); shift = [-16 * e, 0, 5 * e]; rot = [0, -7 * e, 0]; } break;
+      case "attack": {
+        const uL = stepU(0.0, 0.5) - stepU(7.4, 0.5), uR = stepU(0.5, 0.5) - stepU(7.9, 0.5);
+        legOff[1][0] = 30 * smooth(uL); legOff[4][0] = 30 * smooth(uR);
+        legLift[1] = stepLift(stepU(0.0, 0.5), 14) + stepLift(stepU(7.4, 0.5), 14);
+        legLift[4] = stepLift(stepU(0.5, 0.5), 14) + stepLift(stepU(7.9, 0.5), 14);
+        const p = smooth((t - 1.0) / 0.7) * (1 - smooth((t - 6.7) / 0.7));
+        shift = [-16 * p, 0, 3 * p]; rot = [0, -6 * p, 0];
+        const b = smooth((t - 1.7) / 0.7) * (1 - smooth((t - 6.0) / 0.7));
+        const wt = Math.max(0, t - 2.4), amp = smooth(wt / 0.5) * (1 - smooth((t - 5.4) / 0.5));
+        blend[0] = blend[3] = b;
+        ovr[0] = { coxa: -22, hip: -66 + 8 * amp * Math.sin(wt * W * 1.2), knee: 22 + 14 * amp * Math.sin(wt * W * 1.2 + 1.2) };
+        ovr[3] = { coxa: 22, hip: -66 - 8 * amp * Math.sin(wt * W * 1.2), knee: 22 - 14 * amp * Math.sin(wt * W * 1.2 + 1.2) };
+      } break;
+    }
+    shift = shift.map((v, i) => v + s0[i]); rot = rot.map((v, i) => v + r0[i]);
+    if (t >= SEQ[st.seq].dur) { st.rest = st.seq === "sitdown"; st.seq = null; seqDone(); }
+  } else if (!st.rest) {
+    st.h = approach(st.h, ui.height, 25 * dt);
+    // dýchání a rozhlížení při stání
+    st.idleT = (st.mode === "stand" && st.waveT < 0 && !moving) ? st.idleT + dt : 0;
+    if (st.idleT > 2) {
+      const a = smooth((st.idleT - 2) / 2);
+      shift[2] += 2 * a * Math.sin(st.idleT * 2 * Math.PI * 0.25); rot[2] += 2.5 * a * Math.sin(st.idleT * 2 * Math.PI * 0.08);
+    }
+  }
+  if (march > 0) { st.liftScale = approach(st.liftScale, 1, dt * 6); if (!moving) st.phase = (st.phase + dt * freq) % 1; }
+  // nohy
+  const R = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rot[0] * D2R, rot[1] * D2R, rot[2] * D2R, "ZYX"));
+  const Rinv = R.clone().invert();
+  const results = [];
+  const stride = { vx: st.v.vx * g.duty / freq, vy: st.v.vy * g.duty / freq, w: st.v.w * D2R * g.duty / freq };
+  LEGS.forEach((L, i) => {
+    const nb = legToBody(L, neutral(L));                         // neutrální bod v rámci těla
+    let ph = (st.phase + g.off[L.id]) % 1;
+    let k, lift = 0, onGround = true;
+    if (ph < g.duty) { k = 0.5 - ph / g.duty; }
+    else { const u = (ph - g.duty) / (1 - g.duty); k = -0.5 + smooth(u); lift = Math.sin(Math.PI * u) * ui.lift * st.liftScale; if (lift > 1) onGround = false; }
+    if (legLift[i] > 1) onGround = false;
+    const dx = (stride.vx - stride.w * nb[1]) * k, dy = (stride.vy + stride.w * nb[0]) * k;
+    // pozice chodidla v "zemním" rámci těla
+    const foot = new THREE.Vector3(nb[0] + dx + legOff[i][0], nb[1] + dy + legOff[i][1], nb[2] + lift + legLift[i]);
+    // do rámce naklopeného těla
+    const fb = foot.clone().sub(new THREE.Vector3(...shift)).applyMatrix4(Rinv);
+    let a = ik(L, bodyToLeg(L, [fb.x, fb.y, fb.z]));
+    if (ovr[i] && blend[i] > 0) {
+      const o = ovr[i], b = blend[i];
+      a = { coxa: a.coxa + (o.coxa - a.coxa) * b, hip: a.hip + (o.hip - a.hip) * b, knee: a.knee + (o.knee - a.knee) * b, ok: a.ok };
+      if (b > 0.02) onGround = false;
+    }
+    results.push({ a, onGround, foot });
+  });
+
+  // vykreslení
+  world.position.set(st.pos.x, st.pos.y, 0);
+  world.rotation.z = st.heading;
+  bodyG.position.set(shift[0], shift[1], st.h + shift[2]);
+  bodyG.rotation.set(0, 0, 0);
+  bodyG.setRotationFromMatrix(R);
+  results.forEach((r, i) => {
+    const o = legObjs[i];
+    o.coxa.rotation.z = r.a.coxa * D2R;
+    o.fem.rotation.y = r.a.hip * D2R;          // hip záporný = stehno nahoru
+    o.tib.rotation.y = r.a.knee * D2R;
+  });
+
+  // rychlost serv
+  if (st.prev && dt > 0) {
+    let m = 0;
+    results.forEach((r, i) => {
+      const p = st.prev[i];
+      m = Math.max(m, Math.abs(r.a.coxa - p.coxa), Math.abs(r.a.hip - p.hip), Math.abs(r.a.knee - p.knee));
+    });
+    const sp = m / dt;
+    if (sp > st.spdPeak || st.spdHold <= 0) { st.spdPeak = sp; st.spdHold = 1.2; } else st.spdHold -= dt;
+  }
+  st.prev = results.map(r => r.a);
+
+  // opěrný mnohoúhelník (ve světě)
+  const pts = [];
+  results.forEach((r, i) => {
+    if (!r.onGround) return;
+    const v = r.foot.clone();
+    pts.push(new THREE.Vector2(v.x, v.y));
+  });
+  const hull = convexHull(pts);
+  const com = new THREE.Vector2(shift[0], shift[1]);
+  let margin = -1;
+  if (hull.length >= 3) {
+    margin = Infinity;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i], b = hull[(i + 1) % hull.length];
+      const ex = b.x - a.x, ey = b.y - a.y;
+      const dist = ((com.x - a.x) * ey - (com.y - a.y) * ex) / Math.hypot(ex, ey);
+      margin = Math.min(margin, -dist);
+    }
+  }
+  const toWorld = (v) => new THREE.Vector3(v.x * ch - v.y * sh + st.pos.x, v.x * sh + v.y * ch + st.pos.y, 0);
+  const cw = Math.cos(st.heading), sw = Math.sin(st.heading);
+  const wpts = hull.map(v => new THREE.Vector3(v.x * cw - v.y * sw + st.pos.x, v.x * sw + v.y * cw + st.pos.y, 0));
+  polyLine.geometry.dispose();
+  polyLine.geometry = new THREE.BufferGeometry().setFromPoints(wpts.length ? wpts : [new THREE.Vector3()]);
+  comDot.position.x = com.x * cw - com.y * sw + st.pos.x;
+  comDot.position.y = com.x * sw + com.y * cw + st.pos.y;
+  const stabColor = margin < 8 ? cssVar("--bad") : margin < 20 ? cssVar("--warn") : cssVar("--ok");
+  polyMat.color.set(stabColor); comDot.material.color.set(stabColor);
+
+  return { results, margin, feet: pts.length };
+}
+
+function convexHull(p) {
+  if (p.length < 3) return p.slice();
+  const a = p.slice().sort((u, v) => u.x - v.x || u.y - v.y);
+  const cross = (o, u, v) => (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x);
+  const lo = [], hi = [];
+  for (const q of a) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of a.slice().reverse()) { while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+
+// ---------- UI ----------
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888"; }
+function applyTheme() {
+  scene.background = new THREE.Color(cssVar("--scene"));
+  buildGrid(new THREE.Color(cssVar("--grid")));
+}
+applyTheme();
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme); } catch (e) {}
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+const tbody = document.getElementById("angles");
+const cells = LEGS.map(L => {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><span class="sw"></span>${L.id}</td><td></td><td></td><td></td>`;
+  tr.title = L.name;
+  tbody.appendChild(tr);
+  return tr;
+});
+const $ = (id) => document.getElementById(id);
+const modeNames = { stand: "Stojí", walk: "Chodí", wave: "Mává přední nohou", dance: "Tanec těla" };
+function busy() { return !!st.seq || st.rest || st.waveT >= 0; }
+function seqDone() {
+  $("qRest").textContent = st.rest ? "Vstaň" : "Lehni";
+  document.querySelectorAll("[data-seq]").forEach(b => b.setAttribute("aria-pressed", "false"));
+  $("qRest").setAttribute("aria-pressed", String(st.rest));
+  setMode("stand");
+  if (st.rest) $("hudMode").textContent = "Leží, serva vypnutá";
+}
+function startSeq(q) {
+  if (q === "standup") { if (!st.rest || st.seq) return; }
+  else if (busy()) return;
+  st.cmd = { vx: 0, vy: 0, w: 0 }; st.rest = false;
+  setMode("stand");
+  st.seq = q; st.seqT = 0;
+  $("hudMode").textContent = SEQ[q].name;
+  document.querySelectorAll("[data-seq]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.seq === q)));
+}
+function setMode(m) {
+  if (m !== "stand" && (st.seq || st.rest)) return;
+  if (m === "wave") { if (st.waveT >= 0) return; st.waveT = 0; st.cmd = { vx: 0, vy: 0, w: 0 }; }
+  st.mode = m;
+  for (const [id, mm] of [["mStand", "stand"], ["mWalk", "walk"], ["mWave", "wave"], ["mDance", "dance"]]) $(id).setAttribute("aria-pressed", String(mm === m));
+  $("hudMode").textContent = modeNames[m];
+}
+function setGait(g) {
+  st.gait = g;
+  for (const [id, gg] of [["gTripod", "tripod"], ["gRipple", "ripple"], ["gWave", "wave"]]) $(id).setAttribute("aria-pressed", String(gg === g));
+  $("hudGait").textContent = GAITS[g].name;
+}
+function drive(vx, vy, w) {
+  if (busy()) return;
+  st.cmd = { vx, vy, w };
+  setMode(vx || vy || w ? "walk" : "stand");
+}
+$("mStand").onclick = () => { if (!busy()) { st.cmd = { vx: 0, vy: 0, w: 0 }; setMode("stand"); } };
+$("mWalk").onclick = () => { if (!busy()) { if (!st.cmd.vx && !st.cmd.vy && !st.cmd.w) st.cmd.vx = 1; setMode("walk"); } };
+$("mWave").onclick = () => setMode("wave");
+$("qRest").onclick = () => startSeq(st.rest ? "standup" : "sitdown");
+document.querySelectorAll("[data-seq]").forEach(b => { b.onclick = () => startSeq(b.dataset.seq); });
+$("mDance").onclick = () => { if (!busy()) { st.cmd = { vx: 0, vy: 0, w: 0 }; setMode("dance"); } };
+$("gTripod").onclick = () => setGait("tripod");
+$("gRipple").onclick = () => setGait("ripple");
+$("gWave").onclick = () => setGait("wave");
+$("dF").onclick = () => drive(1, 0, 0);
+$("dB").onclick = () => drive(-1, 0, 0);
+$("dL").onclick = () => drive(0, 1, 0);
+$("dR").onclick = () => drive(0, -1, 0);
+$("dTL").onclick = () => drive(0, 0, 1);
+$("dTR").onclick = () => drive(0, 0, -1);
+$("dS").onclick = () => drive(0, 0, 0);
+addEventListener("keydown", (e) => {
+  if (e.target && e.target.tagName === "INPUT") return;
+  const k = e.key.toLowerCase();
+  const map = { w: [1, 0, 0], s: [-1, 0, 0], a: [0, 1, 0], d: [0, -1, 0], q: [0, 0, 1], e: [0, 0, -1], " ": [0, 0, 0] };
+  if (map[k]) { e.preventDefault(); drive(...map[k]); }
+});
+const sliders = [["sSpeed", "speed", v => v + " mm/s"], ["sFreq", "freq", v => v.toFixed(1) + " Hz"], ["sLift", "lift", v => v + " mm"], ["sHeight", "height", v => v + " mm"], ["sSpread", "spread", v => v + " mm"]];
+for (const [id, key, fmt] of sliders) {
+  const el = $(id), out = $("o" + id.slice(1));
+  const set = () => { ui[key] = parseFloat(el.value); out.textContent = fmt(ui[key]); };
+  el.addEventListener("input", set); set();
+}
+
+function servoCmd(v, n) { return 90 + (v - n); }
+function cls(v, n, lim, ok) {
+  if (!ok || v < lim[0] - 0.5 || v > lim[1] + 0.5) return "b";
+  return Math.abs(v - n) > 60 ? "w" : "";
+}
+let uiTick = 0;
+function updateUI(r) {
+  uiTick++;
+  if (uiTick % 4) return;
+  r.results.forEach((x, i) => {
+    const td = cells[i].children;
+    td[0].firstChild.className = "sw" + (x.onGround ? " on" : "");
+    const parts = [["coxa", NEUTRAL.coxa, LIM.coxa], ["hip", NEUTRAL.hip, LIM.hip], ["knee", NEUTRAL.knee, LIM.knee]];
+    parts.forEach(([k, n, lim], j) => {
+      const v = x.a[k];
+      td[j + 1].textContent = servoCmd(v, n).toFixed(0) + "°";
+      td[j + 1].className = cls(v, n, lim, x.a.ok);
+    });
+  });
+  const m = r.margin;
+  $("vStab").textContent = m < 0 ? "–" : m.toFixed(0) + " mm";
+  $("stStab").className = "stat " + (m < 8 ? "b" : m < 20 ? "w" : "o");
+  $("stabDot").style.background = m < 8 ? cssVar("--bad") : m < 20 ? cssVar("--warn") : cssVar("--ok");
+  $("vSpd").textContent = st.spdPeak.toFixed(0) + " °/s";
+  $("stSpd").className = "stat " + (st.spdPeak > 600 ? "b" : st.spdPeak > 400 ? "w" : "o");
+  $("vFeet").textContent = r.feet;
+  const capF = st.freqEff < ui.freq - 0.01, capV = st.vmaxEff < ui.speed - 0.5;
+  $("oFreq").textContent = capF ? st.freqEff.toFixed(1) + " Hz*" : ui.freq.toFixed(1) + " Hz";
+  $("oSpeed").textContent = capV ? st.vmaxEff.toFixed(0) + " mm/s*" : ui.speed + " mm/s";
+}
+
+// ---------- smyčka ----------
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(canvas);
+resize();
+
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let last = performance.now();
+const camOff = new THREE.Vector3();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const before = new THREE.Vector3(st.pos.x, st.pos.y, 0);
+  const r = update(reduce ? dt * 0.6 : dt);
+  // kamera jede s robotem
+  camOff.set(st.pos.x - before.x, st.pos.y - before.y, 0);
+  camera.position.add(camOff); controls.target.add(camOff);
+  sun.position.add(camOff); sun.target.position.set(st.pos.x, st.pos.y, 0);
+  controls.update();
+  renderer.render(scene, camera);
+  updateUI(r);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// kontrola: IK a FK se shodují
+const chk = fk(LEGS[0], ik(LEGS[0], neutral(LEGS[0])));
+window.__robospider = { ik, fk, chk, neutral: neutral(LEGS[0]), update, st, ui, setMode, drive, setGait, startSeq, SEQ };
+})();
+</script>
